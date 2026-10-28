@@ -1,3 +1,4 @@
+{ // bloc isolé : aucune variable ne fuit vers les autres cartes
 /*
  * Weather Overview Card (FR)
  * Carte Home Assistant météo : conditions actuelles avec icône animée, alerte, prévisions par jour,
@@ -5,11 +6,42 @@
  * clair/sombre automatique, éditeur visuel, textes en français. Fonctionne avec toute entité « weather ».
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.1.0";
+
+/* === NUANCE COMMUNE v2 (cartes Johan854) ===
+ * Bloc identique dans toutes les cartes. Options : nuance, nuance_perso, intensite.
+ * nuance "theme" (par défaut) : suit la variable carte-nuance du thème Home Assistant ;
+ * si elle n'existe pas, la carte garde ses couleurs d'origine. Intensité : 0 = neutre, 1 = normal, 2 = très coloré. */
+const GV_NUANCES = [["braise", "Braise (rouge)", "#e0524f"], ["ocean", "Océan (bleu)", "#2f8fd8"], ["lagon", "Lagon (turquoise)", "#1fb5a8"], ["foret", "Forêt (vert)", "#3fae5a"], ["lavande", "Lavande (violet)", "#8a63d8"], ["framboise", "Framboise (rose)", "#e05597"], ["ambre", "Ambre (orange)", "#e8902c"], ["ardoise", "Ardoise (neutre)", "#7d8595"]];
+const GV_DEFAULTS = { nuance: "theme", intensite: 1 };
+const gvAccent = (c) => {
+  const p = c && c.nuance_perso;
+  if (c && c.nuance === "perso") {
+    if (Array.isArray(p) && p.length === 3) return "#" + p.map((v) => Math.max(0, Math.min(255, Math.round(+v || 0))).toString(16).padStart(2, "0")).join("");
+    if (typeof p === "string" && /^#?[0-9a-f]{6}$/i.test(p.trim())) return "#" + p.trim().replace("#", "");
+  }
+  const n = GV_NUANCES.find((x) => x[0] === (c && c.nuance));
+  return n ? n[2] : "var(--carte-nuance)";
+};
+/* Variables posées sur <ha-card> : --g-bg-x (fond dégradé teinté) et --acc-ui-x (couleur d'accent).
+ * Sans nuance (thème sans carte-nuance), elles sont invalides : chaque carte retombe alors sur ses couleurs d'origine. */
+const gvStyle = (c, dark) => {
+  const i = Number(c && c.intensite), ai = Number.isFinite(i) ? Math.max(0, Math.min(2, i)) : 1;
+  const m = (pct, base) => `color-mix(in srgb,var(--acc-ui) ${+(pct * ai).toFixed(1)}%,${base})`;
+  const bg = dark ? `linear-gradient(160deg,${m(5, "#1b1e32")} 0%,${m(11, "#1f1b2c")} 55%,${m(22, "#1c1620")} 100%)`
+    : `linear-gradient(160deg,${m(2, "#f8f9fd")} 0%,${m(5, "#eef1f8")} 55%,${m(11, "#f8f8fa")} 100%)`;
+  return `--acc-ui:${gvAccent(c)};--g-bg-x:${bg};--acc-ui-x:color-mix(in srgb,var(--acc-ui) ${dark ? "80%,#fff" : "82%,#000"})`;
+};
+const GV_FIELDS = [
+  { name: "nuance", selector: { select: { mode: "dropdown", options: [{ value: "theme", label: "Selon le thème (couleurs d'origine)" }, ...GV_NUANCES.map((n) => ({ value: n[0], label: n[1] })), { value: "perso", label: "Personnalisée" }] } } },
+  { name: "nuance_perso", selector: { color_rgb: {} } },
+  { name: "intensite", selector: { number: { min: 0, max: 2, step: 0.1, mode: "slider" } } }];
+const GV_LABELS = { nuance: "Nuance de couleur", nuance_perso: "Couleur personnalisée (nuance « Personnalisée »)", intensite: "Intensité de la nuance" };
+/* === FIN NUANCE COMMUNE === */
 
 const DEFAULTS = {
   title: "",
-  theme: "auto", // auto | light | dark
+  theme: "auto", nuance: "theme", intensite: 1, // auto | light | dark
   weather_entity: "",
   temperature_entity: "", // capteur de température à afficher à la place de celle de la météo (facultatif)
   condition_entity: "", // capteur de texte de condition (facultatif)
@@ -228,16 +260,16 @@ class WeatherOverviewCard extends HTMLElement {
       <style>
         * { box-sizing:border-box; }
         ha-card.dark {
-          --wx-text:#f4f6fb; --wx-muted:#a9afc0; --wx-bg:linear-gradient(160deg,#1b1e32 0%,#241a2a 55%,#2d1519 100%);
+          --wx-text:#f4f6fb; --wx-muted:#a9afc0; --wx-bg:var(--g-bg-x,linear-gradient(160deg,#1b1e32 0%,#241a2a 55%,#2d1519 100%));
           --wx-border:rgba(255,255,255,.14); --wx-shadow:0 .6em 2em rgba(0,0,0,.35);
           --wx-glass:rgba(255,255,255,.07); --wx-glass-b:rgba(255,255,255,.13); --wx-fill:rgba(255,255,255,.09); --wx-fill-b:rgba(255,255,255,.16);
-          --wx-ok:#3ddc84; --wx-warn:#ffb86b; --wx-err:#ff5a5f; --wx-cloud:#d7deee; --wx-acc:#5ab4ff;
+          --wx-ok:#3ddc84; --wx-warn:#ffb86b; --wx-err:#ff5a5f; --wx-cloud:#d7deee; --wx-acc:var(--acc-ui-x,#5ab4ff);
         }
         ha-card.light {
-          --wx-text:#1c2030; --wx-muted:#5d6477; --wx-bg:linear-gradient(160deg,#f8f9fd 0%,#eef1f8 55%,#f8eff0 100%);
+          --wx-text:#1c2030; --wx-muted:#5d6477; --wx-bg:var(--g-bg-x,linear-gradient(160deg,#f8f9fd 0%,#eef1f8 55%,#f8eff0 100%));
           --wx-border:rgba(20,24,40,.12); --wx-shadow:0 .4em 1.4em rgba(20,24,40,.12);
           --wx-glass:rgba(255,255,255,.7); --wx-glass-b:rgba(20,24,40,.1); --wx-fill:rgba(20,24,40,.06); --wx-fill-b:rgba(20,24,40,.14);
-          --wx-ok:#1a9d55; --wx-warn:#c77a14; --wx-err:#d32f35; --wx-cloud:#b9c3d9; --wx-acc:#1a76d2;
+          --wx-ok:#1a9d55; --wx-warn:#c77a14; --wx-err:#d32f35; --wx-cloud:#b9c3d9; --wx-acc:var(--acc-ui-x,#1a76d2);
         }
         ha-card { container-type:inline-size; display:flex; flex-direction:column; gap:12px; padding:16px; overflow:hidden; color:var(--wx-text);
           border-radius:24px; border:1px solid var(--wx-border); background:var(--wx-bg); box-shadow:var(--wx-shadow); }
@@ -283,7 +315,7 @@ class WeatherOverviewCard extends HTMLElement {
         .inf:first-child { border-top:0; } .inf span { color:var(--wx-muted); } .inf b { text-align:right; }
         @media (prefers-reduced-motion: reduce) { .sun, .drift, .drop, .flake, .bolt, .fogl { animation:none; } }
       </style>
-      <ha-card class="${dark ? "dark" : "light"}">
+      <ha-card class="${dark ? "dark" : "light"}" style="${gvStyle(this._config, dark)}">
         <div class="now glass">
           <div><div class="nm">${esc(name)}</div>
             <button class="t" data-more="${esc(c.temperature_entity || c.weather_entity)}">${isNum(temp) ? this._fmt(temp, 1) : "—"}<small>${esc(tU)}</small></button>
@@ -302,7 +334,7 @@ class WeatherOverviewCard extends HTMLElement {
 }
 
 /* ---------- Éditeur visuel ---------- */
-const LABELS = {
+const LABELS = { ...GV_LABELS,
   title: "Titre (nom du lieu, facultatif)", theme: "Thème", weather_entity: "Entité météo (weather)", temperature_entity: "Capteur de température (facultatif)",
   condition_entity: "Capteur de condition en texte (facultatif)", alert_entity: "Capteur d'alerte météo (affiché si différent de 0)",
   forecast_days: "Jours de prévision (1 à 7)", show_forecast: "Afficher les prévisions",
@@ -313,7 +345,7 @@ const MAIN_SCHEMA = [
   { name: "title", selector: { text: {} } },
   { type: "grid", name: "", schema: [
     { name: "theme", selector: { select: { mode: "dropdown", options: [
-      { value: "auto", label: "Automatique (thème de Home Assistant)" }, { value: "light", label: "Clair" }, { value: "dark", label: "Sombre" } ] } } },
+      { value: "auto", label: "Automatique (thème de Home Assistant)" }, { value: "light", label: "Clair" }, { value: "dark", label: "Sombre" } ] } } }, ...GV_FIELDS,
     { name: "forecast_days", selector: { number: { min: 1, max: 7, mode: "box" } } },
   ] },
   { name: "show_forecast", selector: { boolean: {} } },
@@ -423,3 +455,4 @@ console.info(
   "color:#fff;background:#1a76d2;font-weight:700;border-radius:3px 0 0 3px;padding:2px 4px",
   "color:#1a76d2;background:#fff;font-weight:700;border-radius:0 3px 3px 0;padding:2px 4px"
 );
+}
